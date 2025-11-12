@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lpv_synthesis"
+version = "0.0.1"
+authors = [
+  { name="Alex Choi", email="choialex@uw.edu" },
+  { name="Barkin Sarigol"}
+]
+description = "An implementation of control synthesis for LPV systems with IQC defined uncertainty."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/aechoi/lpv_synthesis"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lpv_synthesis"]

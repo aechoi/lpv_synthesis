@@ -1,0 +1,6 @@
+numpy
+cvxpy
+matplotlib
+ipynb
+ipympl
+control
