@@ -4,3 +4,4 @@ matplotlib
 ipynb
 ipympl
 control
+sympy
