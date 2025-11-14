@@ -9,7 +9,10 @@ class Controller:
         # Employ Lemma 1 so that you can use sup_rho norm(Fl(Grho_tilde,Krho))<=gamma
         # in order to show that sup_delta norm(Fu(Fl(Grho,Krho),Delta))<=gamma holds.
 
-        Grho_tilde=generate_Grho_tilde(Grho,Psi11,Psi22,Grho.ne,Grho.ny,Grho.nd,Grho.nu,Grho.nv,Grho.nw)# Equation 18
+        Grho_tilde_unmodified=generate_Grho_tilde_unmodified(Grho,Psi11,Psi22,Grho.ne,Grho.ny,Grho.nd,Grho.nu,Grho.nv,Grho.nw)# Equation 18
+
+        #Modify Grho_tilde_unmodified to put it into the from shown in equation 4, in reference 4. 
+        'Grho_tilde= APPLY ALEXs method to put Grho_tilde_unmodified into the correct form.'
 
         ne1=Grho.nv
         ne2=Grho.ne
