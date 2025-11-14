@@ -1,26 +1,38 @@
 import numpy as np
 import cvxpy as cp
 import sympy as sp
-
+from collections import namedtuple
+import control as c
 class Controller:
-    def __init__(Grho,Psi,gamma,nv,nw,ne1,ne2,ny,nd1,nd2,nu,nx,rho_lower_lim,rho_upper_lim,rho_samples,A,B1,B2,C1,C2):    
-
-        nd=dn1+nd2
-        ne=ne1+ne2
-        
-        Psi11=Psi[:nv,:nv]
-        Psi22=Psi[nv:,nv:]
-        Psi22inv=np.linalg.inv(Psi22)
-        
-        mat1=np.block([[Psi11,np.zeros((nv,ne+ny))],
-                      [np.zeros((ne+ny,nv)),np.eye(ne+ny)]])
-        mat2=np.block([[Psi22inv,np.zeros((nw,nd+nu))],
-                      [np.zeros((nd+nu,nw)),np.eye(nd+nu)]])
-
-        Grho_tilde=mat1@Grho@mat2    # Equation 18
+    def __init__(Grho,Psi11,Psi22,gamma,rho_lower_lim,rho_upper_lim,rho_samples):    
 
         # Employ Lemma 1 so that you can use sup_rho norm(Fl(Grho_tilde,Krho))<=gamma
         # in order to show that sup_delta norm(Fu(Fl(Grho,Krho),Delta))<=gamma holds.
+
+        Grho_tilde=generate_Grho_tilde(Grho,Psi11,Psi22,Grho.ne,Grho.ny,Grho.nd,Grho.nu,Grho.nv,Grho.nw)# Equation 18
+
+        ne1=Grho.nv
+        ne2=Grho.ne
+        ny=Grho.ny
+        nd1=Grho.nw
+        nd2=Grho.nd
+        nu=Grho.nu
+    
+        A=Grho_tilde.A
+        nx=np.shape(Grho_tilde.A)[0]
+
+        B=Grho_tilde.B
+        B11=B[:,:nd1]
+        B12=B[:,nd1:nd1+nd2]
+        B1=B[:,:nd1+nd2]
+        B2=B[:,nd1+nd2:]
+
+        C=Grho_tilde.C
+        C11=C[:ne1,:]
+        C12=C[ne1:ne1+ne2,:]
+        C1=C[:ne1+ne2,:]
+        C2=C[ne1+ne2:,:]
+
 
         # Now, solve theorem 1 for P and Q (or X and Y using ref 4 notation) using SDP
         #But all matrices in the LMI are a non-convex function of rho. So I guess we
@@ -39,19 +51,20 @@ class Controller:
 
         rho_vec=np.linspace(rho_lower_lim,rho_upper_lim,rho_samples)
 
-        for rho in rho_vec:   #should be for Grho_tilde
-            a=A(rho)
-            b1=B1(rho)
-            b2=B2(rho)
-            c1=C1(rho)
-            c2=C2(rho)
+        for rho_val in rho_vec: 
 
-            c11=c1[:ne1,:]
-            c12=c1[ne1:,:]
-            b11=c1[:,:nd1]
-            b12=c1[:nd1,:]
+            a=A.subs(rho_val)
             
-            
+            b1=B1.subs(rho_val)
+            b11=B11.subs(rho_val)
+            b12=B12.subs(rho_val)
+            b2=B2.subs(rho_val)
+
+            c1=C1.subs(rho_val)
+            c11=C11.subs(rho_val)
+            c12=C12.subs(rho_val)
+            c2=C2.subs(rho_val)
+                       
             Ahat=a-b2@c12
             Atilde=a-b12@c2
             
@@ -100,3 +113,60 @@ class Controller:
         self.Bk=Bk
         self.Ck=Ck
         self.Dk=Dk
+
+    def sys1_tosys2_seriesconnect(A1,B1,C1,D1,A2,B2,C2,D2): # series connect 2 LTI/LPV systems together
+
+        Aseries=sp.BlockMatrix([[A1, sp.zeros(np.shape(A1)[0],np.shape(A2)[1])],
+                                [B2@C1,A2]])
+        Bseries=sp.BlockMatrix([[B1],
+                                [B2@D1]])
+        Cseries=sp.BlockMatrix([D2@C1,C2])
+        Dseries=D2@D1
+        
+        series_system = namedtuple('series_system', ['A', 'B','C','D'])
+        series_system= namedtuple(Aseries,Bseries,Cseries,Dseries)
+        
+        return series_system
+
+    def generate_Grho_tilde(Grho,Psi11,Psi22,ne,ny,nd,nu,nv,nw):
+
+        #generate the matrix that left multiplies Grho in equation 18
+        Psi11ss=c.ss(Psi11)
+        Psi11ss=Psi11ss.minreal()
+        nx_psi11=np.shape(Psi11ss.A)[0]
+
+        Psi11_B_expanded=sp.BlockMatrix([Psi11ss.B,sp.zeros(nx_psi11,nv)])
+        Psi11_C_expanded=sp.BlockMatrix([[Psi11ss.C],
+                                         [sp.zeros(ne+ny,nx_psi11)]])
+        Psi11_D_expanded=sp.BlockMatrix([[Psi11ss.D,sp.zeros(nv,ne+ny)],
+                                         [sp.zeros(ne+ny,nv),np.eye(ne+ny)]])
+
+        #generate the matrix that left multiplies Grho in equation 18
+        Psi22ss=c.c.ss(Psi22).minreal()
+        Psi22ss=c.minreal(Psi22ss)
+        #invert the state space
+        Psi22Ainv=Psi22ss.A-Psi22ss.B@np.linalg.inv(Psi22ss.D)-Psi22ss.C
+        Psi22Binv=Psi22ss.B@np.linalg.inv(Psi22ss.D)
+        Psi22Cinv=-1*np.linalg.inv(Psi22ss.D)@Psi22ss.C
+        Psi22Dinv=np.linalg.inv(Psi22ss.D)
+        
+        Pssi22invss=c.ss(Psi22Ainv,Psi22Binv,Psi22Cinv,Psi22Dinv)
+        
+        Psi22invss=c.minreal(Psi22invss)
+        
+        nx_psi22inv=np.shape(Psi22invss.A)[0]
+
+        Psi22inv_B_expanded=sp.BlockMatrix([Psi22invss.B,sp.zeros(nx_psi22inv,nw)])
+        Psi22inv_C_expanded=sp.BlockMatrix([[Psi22invss.C],
+                                          [sp.zeros(nd+nu,nx_psi22inv)]])
+        Psi22inv_D_expanded=sp.BlockMatrix([[Psi22invss.D,sp.zeros(nw,nd+nu)],
+                                         [sp.zeros(nd+nu,nw),np.eye(nd+nu)]])
+
+        #Implement equation  18
+        Grho_psi22inv_product=sys1_tosys2_seriesconnect(Pssi22invss.A,Psi22inv_B_expanded,Psi22inv_C_expanded,Psi22inv_D_expanded,Grho.A,Grho.B,Grho.C,Grho.D)
+        Grhotilde=sys1_tosys2_seriesconnect(Grho_psi22inv_product.A,Grho_psi22inv_product.B,Grho_psi22inv_product.C,Grho_psi22inv_product.D,Psi11ss.A,Psi11_B_expanded,Psi11_C_expanded,Psi11_D_expanded)
+
+        return Grhotilde
+        
+
+    
