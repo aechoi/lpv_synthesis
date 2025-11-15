@@ -18,6 +18,23 @@ class System:
         self.nw = int(nw)
         self.nd = int(nd)
         self.nu = int(nu)
+        self.B1=B[:,:nw]
+        self.B2=B[:,nw:nw+nd]
+        self.B3=B[:,nw+nd:]
+        self.C1=C[:nv,:]
+        self.C2=C[nv:nv+ne,:]
+        self.C3=C[nv+ne:,:]
+        self.D11=C[:nv,:nw]
+        self.D12=C[:nv,nw:nw+nd]
+        self.D13=C[:nv,nw+nd:]
+        self.D21=C[nv:nv+ne,:nw]
+        self.D22=C[nv:nv+ne,nw:nw+nd]
+        self.D23=C[nv:nv+ne,nw+nd:]
+        self.D31=C[nv+ne:,:nw]
+        self.D32=C[nv+ne:,nw:nw+nd]
+        self.D33=C[nv+ne:,nw+nd:]
+        
+        
 
     def generate_Grho_tilde(self,Psi11,Psi22):
         """Psi11 and Psi22 are control library transfer function and state space objects"""
@@ -73,7 +90,7 @@ class System:
         Grho_psi22inv_product=self.sys1_tosys2_seriesconnect(Psi22Ainv,Psi22inv_B_expanded,Psi22inv_C_expanded,Psi22inv_D_expanded,self.A,self.B,self.C,self.D)
         Grhotilde=self.sys1_tosys2_seriesconnect(Grho_psi22inv_product.A,Grho_psi22inv_product.B,Grho_psi22inv_product.C,Grho_psi22inv_product.D,Psi11ss.A,Psi11_B_expanded,Psi11_C_expanded,Psi11_D_expanded)
 
-        self.Grho_tilde=Grho_tilde
+        return System(Grho_tilde.A,Grho_tilde.B,Grho_tilde.C,Grho_tilde.D,nv,ne,ny,nw,nd,nu)
 
     
     def sys1_tosys2_seriesconnect(self,A1,B1,C1,D1,A2,B2,C2,D2): # series connect 2 LTI/LPV systems together
