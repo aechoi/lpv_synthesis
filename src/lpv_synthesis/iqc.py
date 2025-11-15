@@ -1,5 +1,7 @@
 """Module for representation of an IQC."""
 
+import control as ct
+
 
 class IQC:
     """Class for representing an IQC filter of a particular form.
@@ -10,4 +12,7 @@ class IQC:
     The filter, Psi, is of the form [Psi11, 0; 0, Psi22].
     """
 
-    pass
+    def __init__(
+        self, psi_11: ct.TransferFunction = None, psi_22: ct.TransferFunction = None
+    ):
+        pass
