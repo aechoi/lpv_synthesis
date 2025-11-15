@@ -1,199 +1,17 @@
-# """Module for system-level struct"""
-
-# from collections import namedtuple
-
-# import numpy as np
-
-
-# class InterconnectSystem:
-#     """features needed
-
-#     args for input and output dims
-#     addressable matrices (sys.A(rho), sys.B1, etc)
-#     callable (pass in inputs, get outputs)
-#     transform into other forms (diff number of inputs/outputs)
-
-#     """
-
-#     def __init__(self, lpv_state_matrices, state_dim, input_dims, output_dims):
-#         pass
-
-
-# def simplify_system(system):
-#     """Normalize the D matrices of the lpv system.
-
-#     Assume you have some A, B1, B2, C1, C2, D11, D12, D21, D22 matrices which
-#     are functions of a parameter vector rho. We want to create another system
-#     object which is transformed from the original such that D11=D22=0 and D12
-#     is [0, I_nu] and D21 is [0, I_ny]. It should still be parameterized by rho.
-
-#     Args:
-#         system: The LPV system to be simplified (plant).
-
-#     Returns:
-#         The simplified LPV system and a function for retrieving the original
-#         variables.
-#     """
-#     # Systems are the interstitial systems between each change of variables
-#     # the variable transforms take the vectors, and transform them back to the
-#     # original system variables. This is dependent on rho.
-#     system_1, var_transform_1 = cov_1(system)
-#     system_2, var_transform_2 = cov_2(system_1)
-#     system_3, var_transform_3 = cov_3(system_2)
-#     system_4, var_transform_4 = cov_4(system_3)
-#     system_5, var_transform_5 = cov_5(system_4)
-#     system_6, var_transform_6 = cov_6(system_5)
-
-#     def var_transform(io, rho):
-#         io_5 = var_transform_6(io, rho)
-#         io_4 = var_transform_5(io_5, rho)
-#         io_3 = var_transform_4(io_4, rho)
-#         io_2 = var_transform_3(io_3, rho)
-#         io_1 = var_transform_2(io_2, rho)
-#         io_orig = var_transform_1(io_1, rho)
-#         return io_orig
-
-#     return system_6, var_transform
-
-
-# def cov_1(system):
-#     """The first change of variables for the LPV system simplification."""
-#     A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-#     nd, nu = system.input_dims
-#     ne, ny = system.output_dims
-
-#     D22_1 = np.zeros((ny, nu))
-
-#     system.D22 = lambda rho: D22_1
-
-#     # [u1; u2; y1; y2] = [d; u; e; y]
-#     def io_transform(io, rho):
-#         io[3] = D22(rho) @ io[1] + io[3]
-#         return io
-
-#     return system, io_transform
-
-
-# def cov_2(system):
-#     """The first change of variables for the LPV system simplification."""
-#     A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-#     nd, nu = system.input_dims
-#     ne, ny = system.output_dims
-#     nx = system.state_dim
-
-#     def svd_gen(rho):
-#         U12, d12, Vh12 = np.linalg.svd(D12(rho))
-#         dim_diff12 = np.abs(len(U12) - len(Vh12))
-#         Sigma12 = np.diag(d12)
-#         u_reind12 = np.r_[np.arange(-dim_diff12, 0), np.arange(-len(U12), -dim_diff12)]
-#         U12 = U12[:, u_reind12]
-
-#         U21, d21, Vh21 = np.linalg.svd(D21)
-#         dim_diff21 = np.abs(len(U21) - len(Vh21))
-#         Sigma21 = np.diag(d21)
-#         v_reind21 = np.r_[np.arange(-dim_diff21, 0), np.arange(-len(Vh21), -dim_diff21)]
-#         Vh21 = Vh21[v_reind21, :]
-
-#         Su1 = Vh21.T
-#         Su2 = Vh12.T @ (1 / Sigma12)
-#         Sy1 = U12.T
-#         Sy2 = (1 / Sigma21) @ U21.T
-#         return Su1, Su2, Sy1, Sy2
-
-#     Su1 = lambda rho: svd_gen(rho)[0]
-#     Su2 = lambda rho: svd_gen(rho)[1]
-#     Sy1 = lambda rho: svd_gen(rho)[2]
-#     Sy2 = lambda rho: svd_gen(rho)[3]
-
-#     B1_2 = lambda rho: B1(rho) @ Su1(rho)
-#     B2_2 = lambda rho: B2(rho) @ Su2(rho)
-#     C1_2 = lambda rho: Sy1(rho) @ C1(rho)
-#     C2_2 = lambda rho: Sy2(rho) @ C2(rho)
-#     D11_2 = lambda rho: Sy1(rho) @ D11(rho) @ Su1(rho)
-#     D12_2 = lambda rho: Sy1(rho) @ D12(rho) @ Su2(rho)
-#     D21_2 = lambda rho: Sy2(rho) @ D21(rho) @ Su1(rho)
-#     D22_2 = lambda rho: Sy2(rho) @ D22(rho) @ Su2(rho)
-
-#     system_1 = InterconnectSystem(
-#         lpv_state_matrices=(A, B1_2, B2_2, C1_2, C2_2, D11_2, D12_2, D21_2, D22_2),
-#         state_dim=nx,
-#         input_dims=(nd, nu),
-#         output_dims=(ne, ny),
-#     )
-
-#     # [u1; u2; y1; y2] = [d; u; e; y]
-#     def io_transform(io, rho):
-#         io[0] = Su1(rho) @ io[0]
-#         io[1] = Su2(rho) @ io[1]
-#         io[2] = Sy1(rho) @ io[2]
-#         io[0] = Sy2(rho) @ io[3]
-
-#     return system_1, io_transform
-
-
-# def cov_3(system):
-#     """The first change of variables for the LPV system simplification."""
-#     A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-#     nd, nu = system.input_dims
-#     ne, ny = system.output_dims
-
-#     # Calcs
-#     # dim_u2 =
-
-#     # [u1; u2; y1; y2] = [d; u; e; y]
-#     def io_transform(io, rho):
-#         return io
-
-#     return system, io_transform
-
-
-# def cov_4(system):
-#     """The first change of variables for the LPV system simplification."""
-#     A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-#     nd, nu = system.input_dims
-#     ne, ny = system.output_dims
-
-#     # Calcs
-
-#     # [u1; u2; y1; y2] = [d; u; e; y]
-#     def io_transform(io, rho):
-#         return io
-
-#     return system, io_transform
-
-
-# def cov_5(system):
-#     """The first change of variables for the LPV system simplification."""
-#     A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-#     nd, nu = system.input_dims
-#     ne, ny = system.output_dims
-
-#     # Calcs
-
-#     # [u1; u2; y1; y2] = [d; u; e; y]
-#     def io_transform(io, rho):
-#         return io
-
-#     return system, io_transform
-
-
-# def cov_6(system):
-#     """The first change of variables for the LPV system simplification."""
-#     A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-#     nd, nu = system.input_dims
-#     ne, ny = system.output_dims
-
-#     # Calcs
-
-#     # [u1; u2; y1; y2] = [d; u; e; y]
-#     def io_transform(io, rho):
-#         return io
-
-#     return system, io_transform
 import sympy as sp
 import numpy as np
 from collections import namedtuple
 import control as c
+
+
+def make_block_property(matrix_name, r_slice, c_slice):
+    def getter(self):
+        return getattr(self, matrix_name)[r_slice, c_slice]
+
+    def setter(self, value):
+        getattr(self, matrix_name)[r_slice, c_slice] = value
+
+    return property(getter, setter)
 
 
 class System:
@@ -211,6 +29,43 @@ class System:
         self.nw = int(nw)
         self.nd = int(nd)
         self.nu = int(nu)
+
+        self.params = [A, B, C, D, nv, ne, ny, nw, nd, nu]
+
+        self._B_cols = [0, nw, nw + nd, nw + nd + nu]
+        self._C_rows = [0, nv, nv + ne, nv + ne + ny]
+        self._make_block_properties()
+
+    def _make_block_properties(self):
+        # B (1 x 3 blocks): [B1 B2 B3]
+        for j, name in enumerate(("B1", "B2", "B3")):
+            c0, c1 = self._B_cols[j], self._B_cols[j + 1]
+            setattr(
+                self.__class__,
+                name,
+                make_block_property("B", slice(None), slice(c0, c1)),
+            )
+
+        # C (3 x 1 blocks): [C1; C2; C3]
+        for i, name in enumerate(("C1", "C2", "C3")):
+            r0, r1 = self._C_rows[i], self._C_rows[i + 1]
+            setattr(
+                self.__class__,
+                name,
+                make_block_property("C", slice(r0, r1), slice(None)),
+            )
+
+        # D (3 x 3 blocks)
+        for i, rname in enumerate(("1", "2", "3")):
+            r0, r1 = self._C_rows[i], self._C_rows[i + 1]
+            for j, cname in enumerate(("1", "2", "3")):
+                c0, c1 = self._B_cols[j], self._B_cols[j + 1]
+                propname = f"D{rname}{cname}"
+                setattr(
+                    self.__class__,
+                    propname,
+                    make_block_property("D", slice(r0, r1), slice(c0, c1)),
+                )
 
     def generate_Grho_tilde(self, Psi11, Psi22):
         """Psi11 and Psi22 are control library transfer function and state space objects"""
@@ -292,7 +147,18 @@ class System:
             Psi11_D_expanded,
         )
 
-        self.Grho_tilde = Grho_tilde
+        return System(
+            Grho_tilde.A,
+            Grho_tilde.B,
+            Grho_tilde.C,
+            Grho_tilde.D,
+            nv,
+            ne,
+            ny,
+            nw,
+            nd,
+            nu,
+        )
 
     def sys1_tosys2_seriesconnect(
         self, A1, B1, C1, D1, A2, B2, C2, D2
@@ -315,6 +181,178 @@ class System:
         return series_system_tuple
 
 
+def simplify_system(system):
+    """Normalize the D matrices of the lpv system.
+
+    Assume you have some A, B1, B2, C1, C2, D11, D12, D21, D22 matrices which
+    are functions of a parameter vector rho. We want to create another system
+    object which is transformed from the original such that D11=D22=0 and D12
+    is [0, I_nu] and D21 is [0, I_ny]. It should still be parameterized by rho.
+
+    Args:
+        system: The LPV system to be simplified. inputs x, d, u; outputs dx, e, y
+
+    Returns:
+        The simplified LPV system and a function for retrieving the original
+        variables.
+    """
+    # Systems are the interstitial systems between each change of variables
+    # the variable transforms take the vectors, and transform them back to the
+    # original system variables. This is dependent on rho.
+    system_1, var_transform_1 = cov_1(system)
+    system_2, var_transform_2 = cov_2(system_1)
+    system_3, var_transform_3 = cov_3(system_2)
+    system_4, var_transform_4 = cov_4(system_3)
+    system_5, var_transform_5 = cov_5(system_4)
+    system_6, var_transform_6 = cov_6(system_5)
+
+    def var_transform(io, rho):
+        io_5 = var_transform_6(io, rho)
+        io_4 = var_transform_5(io_5, rho)
+        io_3 = var_transform_4(io_4, rho)
+        io_2 = var_transform_3(io_3, rho)
+        io_1 = var_transform_2(io_2, rho)
+        io_orig = var_transform_1(io_1, rho)
+        return io_orig
+
+    return system_6, var_transform
+
+
+def cov_1(sys):
+    """The first change of variables for the LPV system simplification."""
+    new_sys = sys.copy()
+
+    D22_1 = sp.zeros(sys.ny, sys.nu)
+    new_sys.D[sys.ny :, sys.nu :] = D22_1
+
+    # params = sys.params.copy()[]
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io, rho):
+        io[3] = sys.D22(rho) @ io[1] + io[3]
+        return io
+
+    return sys, io_transform
+
+
+def cov_2(system):
+    """The first change of variables for the LPV system simplification."""
+    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
+    nd, nu = system.input_dims
+    ne, ny = system.output_dims
+    nx = system.state_dim
+
+    def svd_gen(rho):
+        U12, d12, Vh12 = np.linalg.svd(D12(rho))
+        dim_diff12 = np.abs(len(U12) - len(Vh12))
+        Sigma12 = np.diag(d12)
+        u_reind12 = np.r_[np.arange(-dim_diff12, 0), np.arange(-len(U12), -dim_diff12)]
+        U12 = U12[:, u_reind12]
+
+        U21, d21, Vh21 = np.linalg.svd(D21)
+        dim_diff21 = np.abs(len(U21) - len(Vh21))
+        Sigma21 = np.diag(d21)
+        v_reind21 = np.r_[np.arange(-dim_diff21, 0), np.arange(-len(Vh21), -dim_diff21)]
+        Vh21 = Vh21[v_reind21, :]
+
+        Su1 = Vh21.T
+        Su2 = Vh12.T @ (1 / Sigma12)
+        Sy1 = U12.T
+        Sy2 = (1 / Sigma21) @ U21.T
+        return Su1, Su2, Sy1, Sy2
+
+    Su1 = lambda rho: svd_gen(rho)[0]
+    Su2 = lambda rho: svd_gen(rho)[1]
+    Sy1 = lambda rho: svd_gen(rho)[2]
+    Sy2 = lambda rho: svd_gen(rho)[3]
+
+    B1_2 = lambda rho: B1(rho) @ Su1(rho)
+    B2_2 = lambda rho: B2(rho) @ Su2(rho)
+    C1_2 = lambda rho: Sy1(rho) @ C1(rho)
+    C2_2 = lambda rho: Sy2(rho) @ C2(rho)
+    D11_2 = lambda rho: Sy1(rho) @ D11(rho) @ Su1(rho)
+    D12_2 = lambda rho: Sy1(rho) @ D12(rho) @ Su2(rho)
+    D21_2 = lambda rho: Sy2(rho) @ D21(rho) @ Su1(rho)
+    D22_2 = lambda rho: Sy2(rho) @ D22(rho) @ Su2(rho)
+
+    system_1 = InterconnectSystem(
+        lpv_state_matrices=(A, B1_2, B2_2, C1_2, C2_2, D11_2, D12_2, D21_2, D22_2),
+        state_dim=nx,
+        input_dims=(nd, nu),
+        output_dims=(ne, ny),
+    )
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io, rho):
+        io[0] = Su1(rho) @ io[0]
+        io[1] = Su2(rho) @ io[1]
+        io[2] = Sy1(rho) @ io[2]
+        io[0] = Sy2(rho) @ io[3]
+
+    return system_1, io_transform
+
+
+def cov_3(system):
+    """The first change of variables for the LPV system simplification."""
+    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
+    nd, nu = system.input_dims
+    ne, ny = system.output_dims
+
+    # Calcs
+    # dim_u2 =
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io, rho):
+        return io
+
+    return system, io_transform
+
+
+def cov_4(system):
+    """The first change of variables for the LPV system simplification."""
+    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
+    nd, nu = system.input_dims
+    ne, ny = system.output_dims
+
+    # Calcs
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io, rho):
+        return io
+
+    return system, io_transform
+
+
+def cov_5(system):
+    """The first change of variables for the LPV system simplification."""
+    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
+    nd, nu = system.input_dims
+    ne, ny = system.output_dims
+
+    # Calcs
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io, rho):
+        return io
+
+    return system, io_transform
+
+
+def cov_6(system):
+    """The first change of variables for the LPV system simplification."""
+    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
+    nd, nu = system.input_dims
+    ne, ny = system.output_dims
+
+    # Calcs
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io, rho):
+        return io
+
+    return system, io_transform
+
+
 if __name__ == "__main__":
     rho = sp.symbols("rho")
     mysys = System(
@@ -329,4 +367,10 @@ if __name__ == "__main__":
         1,
         1,
     )
-    mysys.generate_Grho_tilde(c.ss(0, 0, 0, 1), c.ss(0, 0, 0, 1))
+    # mysys.generate_Grho_tilde(c.ss(0, 0, 0, 1), c.ss(0, 0, 0, 1))
+
+    # demo of property generation
+    print(mysys.D)
+    print(mysys.D22)
+    mysys.D22 = sp.zeros(1, 1)
+    print(mysys.D)
