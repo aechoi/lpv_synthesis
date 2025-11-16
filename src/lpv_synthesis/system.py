@@ -15,8 +15,9 @@ def make_block_property(matrix_name, r_slice, c_slice):
 
 
 class System:
-    def __init__(self, A, B, C, D, nv, ne, ny, nw, nd, nu):
+    def __init__(self, A, B, C, D, nv, ne, ny, nw, nd, nu, rho_arr):
         """A,B,C,D are sympy matrices, ns are int"""
+        """rho_arr is a sympy/numpy array"""
         """Creates the initial system object"""
 
         self.A = A
@@ -29,6 +30,8 @@ class System:
         self.nw = int(nw)
         self.nd = int(nd)
         self.nu = int(nu)
+        self.rho_arr = rho_arr
+        
 
         self.params = [A, B, C, D, nv, ne, ny, nw, nd, nu]
 
@@ -77,6 +80,7 @@ class System:
         nw=self.nw
         nd=self.nd
         nu=self.nu
+        rho_arr=self.rho_arr
 
         #generate the matrix that left multiplies Grho in equation 18
         Psi11ss=c.ss(Psi11)
@@ -119,7 +123,7 @@ class System:
         #Implement equation  18
         Grho_psi22inv_product=self.sys1_tosys2_seriesconnect(Psi22Ainv,Psi22inv_B_expanded,Psi22inv_C_expanded,Psi22inv_D_expanded,self.A,self.B,self.C,self.D)
         Grhotilde=self.sys1_tosys2_seriesconnect(Grho_psi22inv_product.A,Grho_psi22inv_product.B,Grho_psi22inv_product.C,Grho_psi22inv_product.D,Psi11ssA,Psi11_B_expanded,Psi11_C_expanded,Psi11_D_expanded)
-        return System(Grhotilde.A,Grhotilde.B,Grhotilde.C,Grhotilde.D,nv,ne,ny,nw,nd,nu)
+        return System(Grhotilde.A,Grhotilde.B,Grhotilde.C,Grhotilde.D,nv,ne,ny,nw,nd,nu,rho_arr)
 
     def sys1_tosys2_seriesconnect(
         self, A1, B1, C1, D1, A2, B2, C2, D2
@@ -320,7 +324,7 @@ def cov_6(system):
 
 if __name__ == "__main__":
     rho = sp.symbols('rho')
-    mysys=System(sp.Matrix([rho]),sp.Matrix([[1,0,1]]),sp.Matrix([[0],[1],[0]]),sp.eye(3),1,1,1,1,1,1)
+    mysys=System(sp.Matrix([rho]),sp.Matrix([[1,0,1]]),sp.Matrix([[0],[1],[0]]),sp.eye(3),1,1,1,1,1,1,np.linspace(0.2,2,3))
     Grho_tilde=mysys.generate_Grho_tilde(c.ss(0,0,0,1),c.ss(0,0,0,1))
 
     # demo of property generation
