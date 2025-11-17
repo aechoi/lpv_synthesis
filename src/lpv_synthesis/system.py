@@ -211,10 +211,8 @@ class System:
             nu,
             rho_arr,
         )
-
-    def sys1_tosys2_seriesconnect(
-        self, A1, B1, C1, D1, A2, B2, C2, D2
-    ):  # series connect 2 LTI/LPV systems together
+    @staticmethod
+    def sys1_tosys2_seriesconnect(A1, B1, C1, D1, A2, B2, C2, D2):  # series connect 2 LTI/LPV systems together
         """This is a helper function for generate_Grho_tilde"""
         print(A1, sp.shape(A1))
         print(B1, sp.shape(B1))
