@@ -319,11 +319,57 @@ def cov_6(system):
 
     return system, io_transform
 
+def LFT(Grho_tilde_modified,controller):
+    """Create LFT system from the Grho_tilde_modifed and controller object"""
+    """The function returns a system objects with inputs [w,d]^T and outputs
+       [v,e]^T"""
+    nv=Grho_tilde_modified.nv
+    ne=Grho_tilde_modified.ne
+    nw=Grho_tilde_modified.nw
+    nd=Grho_tilde_modified.nd
+    n_input_upper=nw+nd
+    n_output_upper=nv+ne
+    nu=0
+    ny=0
+    rho_arr=Grho_tilde_modified.rho_arr
 
+    #Here, I am denoting subscript 1 to be the upper,2 to be lower input/output
+    A=Grho_tilde_modified.A
+    B1=Grho_tilde_modified.B[:,:n_input_upper]
+    B2=Grho_tilde_modified.B[:,n_input_upper:]
+    C1=Grho_tilde_modified.C[:n_output_upper,:]
+    C2=Grho_tilde_modified.C[n_output_upper:,:]
+    D11=Grho_tilde_modified.D[:n_output_upper,:n_input_upper]
+    D12=Grho_tilde_modified.D[:n_output_upper,n_input_upper:]
+    D21=Grho_tilde_modified.D[n_output_upper:,:n_input_upper]
+    D22=Grho_tilde_modified.D[n_output_upper:,n_input_upper:]
+
+    Ak=controller.A
+    Bk=controller.B
+    Ck=controller.C
+    Dk=controller.D
+
+    print(sp.shape(Dk@D22)[0])
+    I=sp.eye(sp.shape(Dk@D22)[0])
+    
+
+    invprod=(I-Dk@D22).inv()
+
+    A_LFT=sp.BlockMatrix([[A+B2@invprod@Dk@C2,B2@invprod@Ck],
+                        [Bk@C2+Bk@D22@invprod@Dk@C2,Ak+Bk@D22@invprod@Ck]])
+    B_LFT=sp.BlockMatrix([[B1+B2@invprod@Dk@D21],
+                        [Bk@D21+Bk@D22@invprod@Dk@D21]])
+    C_LFT=sp.BlockMatrix([[C1+D12@invprod@Dk@C2,D12@invprod@Ck]])
+    D_LFT=D11+D12@invprod@Dk@D21
+
+    return System(A_LFT, B_LFT, C_LFT, D_LFT, nv, ne, ny, nw, nd, nu, rho_arr)
+    
 ###
 
 if __name__ == "__main__":
     rho = sp.symbols('rho')
+
+    #demo of Grho_tilde function
     mysys=System(sp.Matrix([rho]),sp.Matrix([[1,0,1]]),sp.Matrix([[0],[1],[0]]),sp.eye(3),1,1,1,1,1,1,np.linspace(0.2,2,3))
     Grho_tilde=mysys.generate_Grho_tilde(c.ss(0,0,0,1),c.ss(0,0,0,1))
 
@@ -332,6 +378,12 @@ if __name__ == "__main__":
     print(mysys.D22)
     mysys.D22 = sp.zeros(1, 1)
     print(mysys.D)
+
+    #demo of LFT function
+    controller_sample = namedtuple('controller_sample', ['A', 'B','C','D'])
+    controller= controller_sample(sp.Matrix([0]),sp.Matrix([0]),sp.Matrix([0]),sp.Matrix([3]))
+    LFT(mysys,controller)
+        
 
     
     
