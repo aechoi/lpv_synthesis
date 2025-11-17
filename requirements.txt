@@ -1,7 +1,7 @@
 numpy
 cvxpy
 matplotlib
-ipynb
+ipykernel
 ipympl
 control
 sympy

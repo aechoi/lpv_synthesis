@@ -1,6 +1,8 @@
+from collections import namedtuple
+import copy
+
 import sympy as sp
 import numpy as np
-from collections import namedtuple
 import control as c
 
 
@@ -35,6 +37,52 @@ class System:
         self._B_cols = [0, nw, nw + nd, nw + nd + nu]
         self._C_rows = [0, nv, nv + ne, nv + ne + ny]
         self._make_block_properties()
+
+    def __str__(self):
+        A_str = sp.srepr(self.A) if self.A is None else sp.pretty(self.A)
+        B_str = sp.srepr(self.B) if self.B is None else sp.pretty(self.B)
+        C_str = sp.srepr(self.C) if self.C is None else sp.pretty(self.C)
+        D_str = sp.srepr(self.D) if self.D is None else sp.pretty(self.D)
+
+        # Split into lines
+        A_lines = A_str.split("\n")
+        B_lines = B_str.split("\n")
+        C_lines = C_str.split("\n")
+        D_lines = D_str.split("\n")
+
+        # Determine consistent row heights
+        top_height = max(len(A_lines), len(B_lines))
+        bot_height = max(len(C_lines), len(D_lines))
+
+        # Determine column widths
+        left_width = max(
+            max(len(line) for line in A_lines), max(len(line) for line in C_lines)
+        )
+        right_width = max(
+            max(len(line) for line in B_lines), max(len(line) for line in D_lines)
+        )
+
+        # Helper pad
+        pad = lambda s, w: s + " " * (w - len(s))
+
+        # Build top and bottom rows
+        top = [
+            pad(A_lines[i] if i < len(A_lines) else "", left_width)
+            + " │ "
+            + pad(B_lines[i] if i < len(B_lines) else "", right_width)
+            for i in range(top_height)
+        ]
+
+        sep = ["─" * (left_width - 1) + "─┼─" + "─" * (right_width - 1)]
+
+        bottom = [
+            pad(C_lines[i] if i < len(C_lines) else "", left_width)
+            + " │ "
+            + pad(D_lines[i] if i < len(D_lines) else "", right_width)
+            for i in range(bot_height)
+        ]
+
+        return "\n".join(top + sep + bottom + ["\n"])
 
     def _make_block_properties(self):
         # B (1 x 3 blocks): [B1 B2 B3]
@@ -210,11 +258,12 @@ def full_svd(A: sp.Matrix) -> tuple:
     else:
         U_full = U
 
-    # pad S with zeros to (m x n)
-    S_full = sp.zeros(m, n)
-    S_full[-r:, -r:] = S
+    # # pad S with zeros to (m x n)
+    # S_full = sp.zeros(m, n)
+    # S_full[m - r :, n - r :] = S
 
-    return U_full, S_full, V_full
+    # the zero part of S is never used, so don't augment
+    return U_full, S, V_full
 
 
 def simplify_system(system):
@@ -242,152 +291,175 @@ def simplify_system(system):
     system_5, var_transform_5 = cov_5(system_4)
     system_6, var_transform_6 = cov_6(system_5)
 
-    def var_transform(io, rho):
-        io_5 = var_transform_6(io, rho)
-        io_4 = var_transform_5(io_5, rho)
-        io_3 = var_transform_4(io_4, rho)
-        io_2 = var_transform_3(io_3, rho)
-        io_1 = var_transform_2(io_2, rho)
-        io_orig = var_transform_1(io_1, rho)
+    def var_transform(io):
+        io_5 = var_transform_6(io)
+        io_4 = var_transform_5(io_5)
+        io_3 = var_transform_4(io_4)
+        io_2 = var_transform_3(io_3)
+        io_1 = var_transform_2(io_2)
+        io_orig = var_transform_1(io_1)
         return io_orig
 
     return system_6, var_transform
 
 
-def cov_1(sys):
+def cov_1(sys: System):
     """The first change of variables for the LPV system simplification."""
-    new_sys = sys.copy()
+    new_sys = copy.deepcopy(sys)
 
-    D22_1 = sp.zeros(sys.ny, sys.nu)
+    D22_1 = sp.zeros(
+        sys.ne, sys.nd
+    )  # maybe need to update this. Need to figure out what the 2i/o plant format is
     new_sys.D22 = D22_1
 
     # [u1; u2; y1; y2] = [d; u; e; y]
-    def io_transform(io, rho):
-        io[3] = sys.D22(rho) @ io[1] + io[3]
+    def io_transform(io):
+        io[3] = sys.D22 @ io[1] + io[3]
         return io
 
-    return sys, io_transform
+    return new_sys, io_transform
 
 
-def cov_2(sys):
+def cov_2(sys: System):
+    """The second change of variables for the LPV system simplification."""
+    new_sys = copy.deepcopy(sys)
+
+    U12, S12, V12 = full_svd(sys.D12)
+    U21, S21, V21 = full_svd(sys.D21)
+
+    Su1 = V21
+    Su2 = V12 @ S12.inv()
+    Sy1 = U12.T
+    Sy2 = S21.inv() @ U21.T
+
+    new_sys.B1 = sys.B1 @ Su1
+    new_sys.B2 = sys.B2 @ Su2
+    new_sys.C1 = Sy1 @ sys.C1
+    new_sys.C2 = Sy2 @ sys.C2
+    new_sys.D11 = Sy1 @ sys.D11 @ Su1
+    new_sys.D12 = Sy1 @ sys.D12 @ Su2
+    new_sys.D21 = Sy2 @ sys.D21 @ Su1
+    new_sys.D22 = Sy2 @ sys.D22 @ Su2
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io):
+        io[0] = Su1 @ io[0]
+        io[1] = Su2 @ io[1]
+        io[2] = Sy1.T @ io[2]
+        io[3] = Sy2.inv() @ io[3]
+        return io
+
+    return new_sys, io_transform
+
+
+def cov_3(sys: System):
     """The first change of variables for the LPV system simplification."""
-    new_sys = sys.copy()
+    new_sys = copy.deepcopy(sys)
 
-    U12, d12, Vh12 = sys.D12.singular_value_decomposition()
-    dim_diff12 = np.abs(len(U12) - len(Vh12))
-    Sigma12 = np.diag(d12)
-    u_reind12 = np.r_[np.arange(-dim_diff12, 0), np.arange(-len(U12), -dim_diff12)]
-    U12 = U12[:, u_reind12]
+    dim_u = sys.D12.rank()
+    dim_y = sys.D21.rank()
 
-    def svd_gen(rho):
-        U12, d12, Vh12 = np.linalg.svd(D12(rho))
-        dim_diff12 = np.abs(len(U12) - len(Vh12))
-        Sigma12 = np.diag(d12)
-        u_reind12 = np.r_[np.arange(-dim_diff12, 0), np.arange(-len(U12), -dim_diff12)]
-        U12 = U12[:, u_reind12]
+    r, c = sys.D11.shape
+    D1111 = sys.D11[: r - dim_u, : c - dim_y]
+    D1112 = sys.D11[: r - dim_u, -dim_y:]
+    D1121 = sys.D11[-dim_u:, : c - dim_y]
+    D1122 = sys.D11[-dim_u:, -dim_y:]
 
-        U21, d21, Vh21 = np.linalg.svd(D21)
-        dim_diff21 = np.abs(len(U21) - len(Vh21))
-        Sigma21 = np.diag(d21)
-        v_reind21 = np.r_[np.arange(-dim_diff21, 0), np.arange(-len(Vh21), -dim_diff21)]
-        Vh21 = Vh21[v_reind21, :]
-
-        Su1 = Vh21.T
-        Su2 = Vh12.T @ (1 / Sigma12)
-        Sy1 = U12.T
-        Sy2 = (1 / Sigma21) @ U21.T
-        return Su1, Su2, Sy1, Sy2
-
-    Su1 = lambda rho: svd_gen(rho)[0]
-    Su2 = lambda rho: svd_gen(rho)[1]
-    Sy1 = lambda rho: svd_gen(rho)[2]
-    Sy2 = lambda rho: svd_gen(rho)[3]
-
-    B1_2 = lambda rho: B1(rho) @ Su1(rho)
-    B2_2 = lambda rho: B2(rho) @ Su2(rho)
-    C1_2 = lambda rho: Sy1(rho) @ C1(rho)
-    C2_2 = lambda rho: Sy2(rho) @ C2(rho)
-    D11_2 = lambda rho: Sy1(rho) @ D11(rho) @ Su1(rho)
-    D12_2 = lambda rho: Sy1(rho) @ D12(rho) @ Su2(rho)
-    D21_2 = lambda rho: Sy2(rho) @ D21(rho) @ Su1(rho)
-    D22_2 = lambda rho: Sy2(rho) @ D22(rho) @ Su2(rho)
-
-    system_1 = InterconnectSystem(
-        lpv_state_matrices=(A, B1_2, B2_2, C1_2, C2_2, D11_2, D12_2, D21_2, D22_2),
-        state_dim=nx,
-        input_dims=(nd, nu),
-        output_dims=(ne, ny),
+    K_inf = -(
+        D1122 + D1121 @ (sp.eye(c - dim_y) - D1111.T @ D1111).inv() @ D1111.T @ D1112
     )
 
-    # [u1; u2; y1; y2] = [d; u; e; y]
-    def io_transform(io, rho):
-        io[0] = Su1(rho) @ io[0]
-        io[1] = Su2(rho) @ io[1]
-        io[2] = Sy1(rho) @ io[2]
-        io[0] = Sy2(rho) @ io[3]
-
-    return system_1, io_transform
-
-
-def cov_3(system):
-    """The first change of variables for the LPV system simplification."""
-    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-    nd, nu = system.input_dims
-    ne, ny = system.output_dims
-
-    # Calcs
-    # dim_u2 =
+    D11 = sys.D11
+    D11[-dim_u:, -dim_y:] = D1122 + K_inf
+    new_sys.D11 = D11
 
     # [u1; u2; y1; y2] = [d; u; e; y]
-    def io_transform(io, rho):
+    def io_transform(io):
+        io[1] = io[1] + K_inf @ io[3]
         return io
 
-    return system, io_transform
+    return new_sys, io_transform
 
 
-def cov_4(system):
-    """The first change of variables for the LPV system simplification."""
-    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-    nd, nu = system.input_dims
-    ne, ny = system.output_dims
+def cov_4(sys):
+    """The fourth change of variables for the LPV system simplification."""
+    new_sys = copy.deepcopy(sys)
 
-    # Calcs
+    X = sys.D11
 
-    # [u1; u2; y1; y2] = [d; u; e; y]
-    def io_transform(io, rho):
-        return io
-
-    return system, io_transform
-
-
-def cov_5(system):
-    """The first change of variables for the LPV system simplification."""
-    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-    nd, nu = system.input_dims
-    ne, ny = system.output_dims
-
-    # Calcs
+    new_sys.A = sys.A + sys.B1 @ X.T @ (sp.eye(X.shape[0]) - X @ X.T).inv() @ sys.C1
+    new_sys.B1 = sys.B1 @ (sp.eye(X.shape[0]) - X.T @ X) ** (-sp.S(1) / 2)
+    new_sys.B2 = (
+        sys.B2
+        + sys.B1 @ X.T @ (sp.eye(X.shape[0]) - X @ X.T) ** (-sp.S(1) / 2) @ sys.D12
+    )
+    new_sys.C1 = (sp.eye(X.shape[0]) - X @ X.T) ** (-sp.S(1) / 2) @ sys.C1
+    new_sys.C2 = sys.C2 + sys.D21 @ X.T @ (sp.eye(X.shape[0]) - X @ X.T).inv() @ sys.C1
+    new_sys.D11 = sp.zeros(*sys.D11.shape)
+    new_sys.D12 = (sp.eye(X.shape[0]) - X @ X.T) ** (-sp.S(1) / 2) @ sys.D12
+    new_sys.D21 = sys.D21 @ (sp.eye(X.shape[0]) - X.T @ X) ** (-sp.S(1) / 2)
+    new_sys.D22 = sys.D21 @ X.T @ (sp.eye(X.shape[0]) - X @ X.T).inv() @ sys.D12
 
     # [u1; u2; y1; y2] = [d; u; e; y]
-    def io_transform(io, rho):
-        return io
+    def io_transform(io):
+        new_io = copy.deepcopy(io)
 
-    return system, io_transform
+        new_io[0] = (
+            X.T @ (sp.eye(X.shape[0]) - X @ X.T) ** (-sp.S(1) / 2) @ io[2]
+            + (sp.eye(X.shape[1]) - X.T @ X) ** (-sp.S(1) / 2) @ io[0]
+        )
+        new_io[2] = (sp.eye(X.shape[0]) - X @ X.T) ** (-sp.S(1) / 2) @ io[2] + (
+            sp.eye(X.shape[0]) - X @ X.T
+        ) ** (-sp.S(1) / 2) @ X @ io[0]
+        return new_io
+
+    return new_sys, io_transform
 
 
-def cov_6(system):
-    """The first change of variables for the LPV system simplification."""
-    A, B1, B2, C1, C2, D11, D12, D21, D22 = system.matrices
-    nd, nu = system.input_dims
-    ne, ny = system.output_dims
+def cov_5(sys):
+    """The fifth change of variables for the LPV system simplification."""
+    new_sys = copy.deepcopy(sys)
 
-    # Calcs
+    new_sys.D22 = sp.zeros(sys.ne, sys.nd)  # same issue as cov_1
 
     # [u1; u2; y1; y2] = [d; u; e; y]
-    def io_transform(io, rho):
+    def io_transform(io):
+        io[3] = sys.D22 @ io[1] + io[3]
         return io
 
-    return system, io_transform
+    return new_sys, io_transform
+
+
+def cov_6(sys):
+    """The last change of variables for the LPV system simplification."""
+    new_sys = copy.deepcopy(sys)
+
+    U12, S12, V12 = full_svd(sys.D12)
+    U21, S21, V21 = full_svd(sys.D21)
+
+    Su1 = V21
+    Su2 = V12 @ S12.inv()
+    Sy1 = U12.T
+    Sy2 = S21.inv() @ U21.T
+
+    new_sys.B1 = sys.B1 @ Su1
+    new_sys.B2 = sys.B2 @ Su2
+    new_sys.C1 = Sy1 @ sys.C1
+    new_sys.C2 = Sy2 @ sys.C2
+    new_sys.D11 = Sy1 @ sys.D11 @ Su1
+    new_sys.D12 = Sy1 @ sys.D12 @ Su2
+    new_sys.D21 = Sy2 @ sys.D21 @ Su1
+    new_sys.D22 = Sy2 @ sys.D22 @ Su2
+
+    # [u1; u2; y1; y2] = [d; u; e; y]
+    def io_transform(io):
+        io[0] = Su1 @ io[0]
+        io[1] = Su2 @ io[1]
+        io[2] = Sy1.T @ io[2]
+        io[3] = Sy2.inv() @ io[3]
+        return io
+
+    return new_sys, io_transform
 
 
 ###
@@ -406,13 +478,7 @@ if __name__ == "__main__":
         1,
         1,
     )
-    Grho_tilde = mysys.generate_Grho_tilde(c.ss(0, 0, 0, 1), c.ss(0, 0, 0, 1))
+    # Grho_tilde = mysys.generate_Grho_tilde(c.ss(0, 0, 0, 1), c.ss(0, 0, 0, 1))
+    print(mysys.A, mysys.B, mysys.C, mysys.D)
 
-    # demo of property generation
-    print(mysys.D)
-    print(mysys.D22)
-    mysys.D22 = sp.zeros(1, 1)
-    print(mysys.D)
-
-    U, S, V = full_svd(mysys.D)
-    print(U @ S @ V.T)
+    new_sys, var_transform = simplify_system(mysys)
