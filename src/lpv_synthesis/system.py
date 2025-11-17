@@ -17,8 +17,9 @@ def make_block_property(matrix_name, r_slice, c_slice):
 
 
 class System:
-    def __init__(self, A, B, C, D, nv, ne, ny, nw, nd, nu):
+    def __init__(self, A, B, C, D, nv, ne, ny, nw, nd, nu, rho_arr):
         """A,B,C,D are sympy matrices, ns are int"""
+        """rho_arr is a sympy/numpy array"""
         """Creates the initial system object"""
 
         self.A = A
@@ -31,6 +32,8 @@ class System:
         self.nw = int(nw)
         self.nd = int(nd)
         self.nu = int(nu)
+        self.rho_arr = rho_arr
+        
 
         self.params = [A, B, C, D, nv, ne, ny, nw, nd, nu]
 
@@ -118,22 +121,23 @@ class System:
     def generate_Grho_tilde(self, Psi11, Psi22):
         """Psi11 and Psi22 are control library transfer function and state space objects"""
         """Assigns Grho_tilde as an attribute which is a named tuple with its own attributes: A,B,C,D"""
+        
+        nv=self.nv
+        ne=self.ne
+        ny=self.ny
+        nw=self.nw
+        nd=self.nd
+        nu=self.nu
+        rho_arr=self.rho_arr
 
-        nv = self.nv
-        ne = self.ne
-        ny = self.ny
-        nw = self.nw
-        nd = self.nd
-        nu = self.nu
-
-        # generate the matrix that left multiplies Grho in equation 18
-        Psi11ss = c.ss(Psi11)
-        Psi11ss = Psi11ss  # .minreal()
-
-        Psi11ssA = sp.Matrix(Psi11ss.A)
-        Psi11ssB = sp.Matrix(Psi11ss.B)
-        Psi11ssC = sp.Matrix(Psi11ss.C)
-        Psi11ssD = sp.Matrix(Psi11ss.D)
+        #generate the matrix that left multiplies Grho in equation 18
+        Psi11ss=c.ss(Psi11)
+        Psi11ss=Psi11ss #.minreal()
+        
+        Psi11ssA=sp.Matrix(Psi11ss.A)
+        Psi11ssB=sp.Matrix(Psi11ss.B)
+        Psi11ssC=sp.Matrix(Psi11ss.C)
+        Psi11ssD=sp.Matrix(Psi11ss.D)
         nx_psi11 = sp.shape(Psi11ssA)[0]
 
         Psi11_B_expanded = sp.BlockMatrix([Psi11ssB, sp.zeros(nx_psi11, ne + ny)])
@@ -160,44 +164,17 @@ class System:
         Psi22Dinv = sp.Matrix(Psi22Dinv)
         nx_psi22inv = sp.shape(Psi22Ainv)[0]
 
-        Psi22inv_B_expanded = sp.BlockMatrix(
-            [Psi22Binv, sp.zeros(nx_psi22inv, nd + nu)]
-        )
+        Psi22inv_B_expanded=sp.BlockMatrix([Psi22Binv,sp.zeros(nx_psi22inv,nd+nu)])
+        
+        Psi22inv_C_expanded=sp.BlockMatrix([[Psi22Cinv],
+                                          [sp.zeros(nd+nu,nx_psi22inv)]])
+        Psi22inv_D_expanded=sp.BlockMatrix([[Psi22Dinv,sp.zeros(nw,nd+nu)],
+                                         [sp.zeros(nd+nu,nw),sp.eye(nd+nu)]])
 
-        Psi22inv_C_expanded = sp.BlockMatrix(
-            [[Psi22Cinv], [sp.zeros(nd + nu, nx_psi22inv)]]
-        )
-        Psi22inv_D_expanded = sp.BlockMatrix(
-            [
-                [Psi22Dinv, sp.zeros(nw, nd + nu)],
-                [sp.zeros(nd + nu, nw), sp.eye(nd + nu)],
-            ]
-        )
-
-        # Implement equation  18
-        Grho_psi22inv_product = self.sys1_tosys2_seriesconnect(
-            Psi22Ainv,
-            Psi22inv_B_expanded,
-            Psi22inv_C_expanded,
-            Psi22inv_D_expanded,
-            self.A,
-            self.B,
-            self.C,
-            self.D,
-        )
-        Grhotilde = self.sys1_tosys2_seriesconnect(
-            Grho_psi22inv_product.A,
-            Grho_psi22inv_product.B,
-            Grho_psi22inv_product.C,
-            Grho_psi22inv_product.D,
-            Psi11ssA,
-            Psi11_B_expanded,
-            Psi11_C_expanded,
-            Psi11_D_expanded,
-        )
-        return System(
-            Grhotilde.A, Grhotilde.B, Grhotilde.C, Grhotilde.D, nv, ne, ny, nw, nd, nu
-        )
+        #Implement equation  18
+        Grho_psi22inv_product=self.sys1_tosys2_seriesconnect(Psi22Ainv,Psi22inv_B_expanded,Psi22inv_C_expanded,Psi22inv_D_expanded,self.A,self.B,self.C,self.D)
+        Grhotilde=self.sys1_tosys2_seriesconnect(Grho_psi22inv_product.A,Grho_psi22inv_product.B,Grho_psi22inv_product.C,Grho_psi22inv_product.D,Psi11ssA,Psi11_B_expanded,Psi11_C_expanded,Psi11_D_expanded)
+        return System(Grhotilde.A,Grhotilde.B,Grhotilde.C,Grhotilde.D,nv,ne,ny,nw,nd,nu,rho_arr)
 
     def sys1_tosys2_seriesconnect(
         self, A1, B1, C1, D1, A2, B2, C2, D2
@@ -461,10 +438,55 @@ def cov_6(sys):
 
     return new_sys, io_transform
 
+def LFT(Grho_tilde_modified,controller):
+    """Create LFT system from the Grho_tilde_modifed and controller object"""
+    """The function returns a system objects with inputs [w,d]^T and outputs
+       [v,e]^T"""
+    nv=Grho_tilde_modified.nv
+    ne=Grho_tilde_modified.ne
+    nw=Grho_tilde_modified.nw
+    nd=Grho_tilde_modified.nd
+    n_input_upper=nw+nd
+    n_output_upper=nv+ne
+    nu=0
+    ny=0
+    rho_arr=Grho_tilde_modified.rho_arr
 
+    #Here, I am denoting subscript 1 to be the upper,2 to be lower input/output
+    A=Grho_tilde_modified.A
+    B1=Grho_tilde_modified.B[:,:n_input_upper]
+    B2=Grho_tilde_modified.B[:,n_input_upper:]
+    C1=Grho_tilde_modified.C[:n_output_upper,:]
+    C2=Grho_tilde_modified.C[n_output_upper:,:]
+    D11=Grho_tilde_modified.D[:n_output_upper,:n_input_upper]
+    D12=Grho_tilde_modified.D[:n_output_upper,n_input_upper:]
+    D21=Grho_tilde_modified.D[n_output_upper:,:n_input_upper]
+    D22=Grho_tilde_modified.D[n_output_upper:,n_input_upper:]
+
+    Ak=controller.A
+    Bk=controller.B
+    Ck=controller.C
+    Dk=controller.D
+
+    print(sp.shape(Dk@D22)[0])
+    I=sp.eye(sp.shape(Dk@D22)[0])
+    
+
+    invprod=(I-Dk@D22).inv()
+
+    A_LFT=sp.BlockMatrix([[A+B2@invprod@Dk@C2,B2@invprod@Ck],
+                        [Bk@C2+Bk@D22@invprod@Dk@C2,Ak+Bk@D22@invprod@Ck]])
+    B_LFT=sp.BlockMatrix([[B1+B2@invprod@Dk@D21],
+                        [Bk@D21+Bk@D22@invprod@Dk@D21]])
+    C_LFT=sp.BlockMatrix([[C1+D12@invprod@Dk@C2,D12@invprod@Ck]])
+    D_LFT=D11+D12@invprod@Dk@D21
+
+    return System(A_LFT, B_LFT, C_LFT, D_LFT, nv, ne, ny, nw, nd, nu, rho_arr)
+    
 ###
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     rho = sp.symbols("rho")
     mysys = System(
         sp.Matrix([rho]),
@@ -482,3 +504,25 @@ if __name__ == "__main__":
     print(mysys.A, mysys.B, mysys.C, mysys.D)
 
     new_sys, var_transform = simplify_system(mysys)
+=======
+    rho = sp.symbols('rho')
+
+    #demo of Grho_tilde function
+    mysys=System(sp.Matrix([rho]),sp.Matrix([[1,0,1]]),sp.Matrix([[0],[1],[0]]),sp.eye(3),1,1,1,1,1,1,np.linspace(0.2,2,3))
+    Grho_tilde=mysys.generate_Grho_tilde(c.ss(0,0,0,1),c.ss(0,0,0,1))
+
+    # demo of property generation
+    print(mysys.D)
+    print(mysys.D22)
+    mysys.D22 = sp.zeros(1, 1)
+    print(mysys.D)
+
+    #demo of LFT function
+    controller_sample = namedtuple('controller_sample', ['A', 'B','C','D'])
+    controller= controller_sample(sp.Matrix([0]),sp.Matrix([0]),sp.Matrix([0]),sp.Matrix([3]))
+    LFT(mysys,controller)
+        
+
+    
+    
+>>>>>>> 2c8631252f70632324cebe68632a3f110444781b
